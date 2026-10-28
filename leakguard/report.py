@@ -5,6 +5,7 @@ from .playbooks import PREVENT, SCRUB, steps_for
 from .rank import ORDER, first_seen
 
 CHANNEL_TEXT = {
+    "staged": "staged for the next commit",
     "pushed": "committed and pushed (reachable from a remote)",
     "history-local": "committed, not pushed to any remote",
     "local-untracked": "in the working tree, not ignored by git",
@@ -54,6 +55,8 @@ def summary(findings):
 
 def to_text(findings, stats) -> str:
     out = [f"leakguard: {stats}", f"Result: {summary(findings)}", ""]
+    if findings and findings[0].tier in ("CRITICAL", "HIGH"):
+        out += [f"Fix first: #1, {findings[0].rule.label}. Rotate it before cleaning git history.", ""]
     for i, f in enumerate(findings, 1):
         out.append(f"{i}. [{f.tier} {f.score}] {f.rule.label}  {f.redacted}  id:{f.fingerprint}")
         for w in _where(f):

@@ -1,0 +1,6 @@
+- id: leakguard
+  name: leakguard (secret scan of staged changes)
+  entry: python -m leakguard scan --staged --fail-on high
+  language: python
+  pass_filenames: false
+  always_run: true

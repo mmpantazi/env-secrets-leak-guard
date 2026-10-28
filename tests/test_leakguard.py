@@ -11,7 +11,7 @@ from leakguard.model import Location
 from leakguard.rank import rank
 from leakguard.report import to_json, to_rotation, to_text
 from leakguard.rules import github_checksum_ok
-from leakguard.sources import GitInfo, scan_ci_log, scan_history, scan_image, scan_tree
+from leakguard.sources import GitInfo, scan_ci_log, scan_history, scan_image, scan_staged, scan_tree
 
 from helpers import gh_token, git, make_image
 
@@ -58,7 +58,8 @@ class Detection(unittest.TestCase):
     def test_code_and_prose_not_reported(self):
         for t in ["var secret = this.req.secret;", "SECRET_KEY = 'development key'", 'app.secret_key = "secret_key"',
                   "secret: 'keyboard cat'", "connect(password=secret)", 'msg = "Revoke the token: npmjs.com > profile"',
-                  "Webhook secrets: Developers > Webhooks"]:
+                  "Webhook secrets: Developers > Webhooks", "Secret: requiredFinding.Secret,", "baseRule.SecretGroup = currentRule.SecretGroup",
+                  "x = `password: someLongWordHere`"]:
             self.assertEqual(scan(t), [], t)
 
     def test_bare_env_word_password_is_kept_but_weak(self):
@@ -106,6 +107,23 @@ class Detection(unittest.TestCase):
         for out in (to_text(f, "s"), to_json(f, "s"), to_rotation(f, "s")):
             self.assertNotIn(STRIPE, out)
             self.assertNotIn(gh_token(), out)
+
+
+class MoreRules(unittest.TestCase):
+    def test_new_providers(self):
+        cases = {
+            "huggingface-token": "hf_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgH",
+            "groq-key": "gsk_" + "a1B2c3D4e5" * 5 + "a1",
+            "shopify-token": "shpat_" + "0123456789abcdef" * 2,
+            "mailgun-key": "key-" + "0123456789abcdef" * 2,
+            "telegram-bot-token": "123456789:AA" + "a1B2c3D4e5" * 3 + "a1B",
+            "azure-storage-key": "AccountKey=" + "A1b2C3d4" * 10 + "A1b2C3==",
+        }
+        for rule, text in cases.items():
+            self.assertEqual(scan(f"x = '{text}'")[0].rule.id, rule, rule)
+
+    def test_ghs_is_short_lived(self):
+        self.assertLess(scan(gh_token("ghs"))[0].validity, 0.5)
 
 
 class Ranking(unittest.TestCase):
@@ -169,6 +187,47 @@ class Sources(unittest.TestCase):
         self.assertEqual(s.locations[0].channel, "history-local")
         self.assertTrue(s.locations[0].commit)
 
+    def test_staged_scan(self):
+        r = self.repo()
+        (r / "old.py").write_text(f'K = "{AWS}"\n')
+        git(r, "add", "."); git(r, "commit", "-qm", "one")
+        (r / "new.py").write_text(f'K = "{STRIPE}"\n')
+        (r / ".env").write_text("A=1\n")
+        git(r, "add", "new.py", ".env")
+        found = rank(merge(scan_staged(r, GitInfo(r), frozenset())))
+        self.assertEqual({f.rule.id for f in found}, {"stripe-secret", "env-file"})
+        self.assertEqual(found[0].tier, "CRITICAL")
+        self.assertIn("staged for the next commit", to_text(found, "x"))
+
+    def test_staged_needs_git(self):
+        with self.assertRaises(RuntimeError):
+            scan_staged(self.dir, GitInfo(self.dir), frozenset())
+
+    def test_removed_from_head_is_explained(self):
+        remote = self.dir / "remote.git"
+        remote.mkdir()
+        git(remote, "init", "-q", "--bare")
+        r = self.repo()
+        git(r, "remote", "add", "origin", str(remote))
+        (r / "a.py").write_text(f'KEY = "{STRIPE}"\n')
+        git(r, "add", "."); git(r, "commit", "-qm", "one")
+        (r / "a.py").write_text("KEY = None\n")
+        git(r, "commit", "-qam", "two")
+        git(r, "push", "-q", "origin", "HEAD")
+        info = GitInfo(r)
+        found = rank(merge(scan_tree(r, info, frozenset()) + scan_history(r, info, frozenset())))
+        self.assertIn("still in git history", to_text(found, "x"))
+        self.assertIn("Fix first", to_text(found, "x"))
+
+    def test_scan_subfolder_of_repo(self):
+        r = self.repo()
+        (r / "sub").mkdir()
+        (r / "sub" / "a.py").write_text(f'KEY = "{STRIPE}"\n')
+        git(r, "add", "."); git(r, "commit", "-qm", "one")
+        info = GitInfo(r / "sub")
+        found = scan_tree(r / "sub", info, frozenset())
+        self.assertEqual(found[0].locations[0].channel, "history-local")
+
     def test_pushed_vs_unpushed(self):
         remote = self.dir / "remote.git"
         remote.mkdir()
@@ -223,6 +282,19 @@ class Sources(unittest.TestCase):
         self.assertIn("stripe-secret", ids)
         self.assertEqual({f.locations[0].channel for f in found}, {"ci-log"})
 
+    def test_github_actions_style_log(self):
+        log = self.dir / "gha.log"
+        log.write_text(
+            "2026-10-01T10:00:00.1234567Z ##[group]Run ./deploy.sh\n"
+            "2026-10-01T10:00:00.2000000Z env:\n"
+            "2026-10-01T10:00:00.2000001Z   API_TOKEN: ***\n"
+            f"2026-10-01T10:00:00.3000000Z + curl -s -H 'Authorization: Bearer {gh_token('gho')}' https://api.example.net\n"
+            f"2026-10-01T10:00:00.4000000Z + export DB_PASSWORD=Zk39xQpL02mVb7Ya\n"
+            "2026-10-01T10:00:00.5000000Z ##[endgroup]\n")
+        found = scan_ci_log(log, frozenset())
+        self.assertEqual({f.rule.id for f in found}, {"github-token", "generic-secret"})
+        self.assertTrue(all(f.locations[0].line for f in found))
+
     def test_image_layers_config_and_deleted_file(self):
         img = self.dir / "img.tar"
         make_image(img, [{"app/.env": f"SK={STRIPE}\n", "usr/lib/x.txt": f"SK={AWS}\n"}, {"app/.wh..env": ""}],
@@ -256,6 +328,15 @@ class Cli(unittest.TestCase):
             fp = next(l for l in md.splitlines() if "Fingerprint" in l).split("`")[1]
             (d / ".leakguardignore").write_text(f"{fp}  # test key\n")
             self.assertEqual(run(build_parser().parse_args(["scan", str(d)])), 0)
+
+    def test_staged_flag_and_exit(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            git(d, "init", "-q")
+            (d / "a.py").write_text(f"KEY='{AWS}'\n")
+            git(d, "add", "a.py")
+            self.assertEqual(run(build_parser().parse_args(["scan", str(d), "--staged"])), 1)
+            self.assertEqual(run(build_parser().parse_args(["scan", str(d / "..") , "--staged"])), 2)
 
     def test_never_and_bad_path(self):
         self.assertEqual(run(build_parser().parse_args(["scan", "/nonexistent-dir-xyz"])), 2)

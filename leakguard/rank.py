@@ -3,6 +3,7 @@ from .model import path_adjust
 
 EXPOSURE = {
     "pushed": {"public": 1.0, "unknown": 0.85, "private": 0.6},
+    "staged": {"public": 1.0, "unknown": 0.85, "private": 0.6},
     "image": {"public": 1.0, "unknown": 0.85, "private": 0.55},
     "ci-log": {"public": 0.95, "unknown": 0.8, "private": 0.45},
 }

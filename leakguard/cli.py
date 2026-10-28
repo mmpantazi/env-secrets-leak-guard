@@ -6,7 +6,7 @@ from . import __version__
 from .model import merge
 from .rank import ORDER, rank
 from .report import to_json, to_rotation, to_text
-from .sources import GitInfo, scan_ci_log, scan_history, scan_image, scan_tree
+from .sources import GitInfo, scan_ci_log, scan_history, scan_image, scan_staged, scan_tree
 
 
 def load_ignored(root: Path, extra):
@@ -27,6 +27,7 @@ def build_parser():
     s = sub.add_parser("scan", help="scan a project folder, plus optional images and CI logs")
     s.add_argument("path", nargs="?", default=".", help="project folder (default: .)")
     s.add_argument("--no-history", action="store_true", help="skip git history")
+    s.add_argument("--staged", action="store_true", help="scan only what is staged for the next commit (for pre-commit hooks)")
     s.add_argument("--no-tree", action="store_true", help="skip the working tree (only images/logs/history)")
     s.add_argument("--image", action="append", default=[], metavar="TAR|NAME", help="docker save tarball or local image name (repeatable)")
     s.add_argument("--ci-log", action="append", default=[], metavar="FILE", help="saved CI log file (repeatable)")
@@ -47,10 +48,13 @@ def run(args) -> int:
     info = GitInfo(root)
     findings, parts = [], []
     try:
-        if not args.no_tree:
+        if args.staged:
+            findings += scan_staged(root, info, ignored)
+            parts.append("staged changes")
+        if not args.no_tree and not args.staged:
             findings += scan_tree(root, info, ignored, exclude={Path(args.rotation).resolve()} if args.rotation else frozenset())
             parts.append("working tree")
-        if info.ok and not args.no_history:
+        if info.ok and not args.no_history and not args.staged:
             findings += scan_history(root, info, ignored)
             parts.append("git history" + ("" if info.has_remote else " (no remote configured)"))
         for img in args.image:

@@ -65,6 +65,8 @@ def _github(secret: str, _line: str):
     if secret.startswith("github_pat_"):
         return 1.0, ""
     if github_checksum_ok(secret):
+        if secret.startswith("ghs_"):
+            return 0.3, "server-to-server token, expires after about an hour"
         return 1.0, "checksum valid"
     return 0.3, "checksum mismatch: probably not a real token"
 
@@ -107,7 +109,8 @@ def _dburl(secret: str, line: str):
     return 1.0, f"remote host {host}"
 
 
-BARE_ASSIGN = re.compile(r"^(export\s+)?[A-Za-z0-9_\-]+\s*[=:]\s*[^\s\"'();]+$")
+DOTTED_IDENT = re.compile(r"^[A-Za-z_][A-Za-z_]*(\.[A-Za-z_][A-Za-z_]*)+$")
+BARE_ASSIGN = re.compile(r"^(export\s+)?[A-Za-z0-9_\-]+\s*[=:]\s*[^\s\"'(),;]+$")
 
 
 def _generic(secret: str, line: str):
@@ -117,6 +120,8 @@ def _generic(secret: str, line: str):
         return 0.0, "path or URL"
     if "(" in secret or "[" in secret:
         return 0.0, "looks like code"
+    if DOTTED_IDENT.match(secret):
+        return 0.0, "looks like a code reference"
     has_digit = any(c.isdigit() for c in secret)
     has_symbol = any(c in "!@#$%^&*+~|?" for c in secret)
     if not (has_digit or has_symbol) and len(secret) < 20 and not BARE_ASSIGN.match(line.strip()):
@@ -154,6 +159,12 @@ RULES = [
     Rule("npm-token", "npm", "npm access token", _r(r"\b(npm_[A-Za-z0-9]{36})\b"), 8, 1),
     Rule("pypi-token", "pypi", "PyPI API token", _r(r"\b(pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{50,})"), 8, 1),
     Rule("digitalocean-token", "digitalocean", "DigitalOcean token", _r(r"\b(dop_v1_[a-f0-9]{64})\b"), 8, 1),
+    Rule("huggingface-token", "huggingface", "Hugging Face token", _r(r"\b(hf_[A-Za-z]{34})\b"), 6, 1),
+    Rule("groq-key", "groq", "Groq API key", _r(r"\b(gsk_[A-Za-z0-9]{52})\b"), 6, 1),
+    Rule("shopify-token", "shopify", "Shopify access token", _r(r"\b(shp(?:at|ca|pa|ss)_[a-fA-F0-9]{32})\b"), 8, 1),
+    Rule("mailgun-key", "mailgun", "Mailgun API key", _r(r"\b(key-[0-9a-f]{32})\b"), 6, 1),
+    Rule("telegram-bot-token", "telegram", "Telegram bot token", _r(r"\b(\d{8,10}:AA[A-Za-z0-9_\-]{33})\b"), 5, 1),
+    Rule("azure-storage-key", "azure", "Azure storage account key", _r(r"AccountKey=([A-Za-z0-9+/]{86}==)"), 9, 1),
     Rule("private-key", "private-key", "Private key",
          _r(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |PGP )?PRIVATE KEY(?: BLOCK)?-----((?:\\n|\s)*[A-Za-z0-9+/=]{20,})"), 9, 1),
     Rule("db-url-password", "database", "Password in database/broker URL",
@@ -165,7 +176,7 @@ RULES = [
     Rule("basic-auth-url", "basic-auth", "Password in URL",
          _r(r"\bhttps?://[^\s:/@'\"]+:([^\s@'\"/]{4,})@[A-Za-z0-9.\-]+"), 6, 1, specific=False, check=_generic),
     Rule("generic-secret", "generic", "Hard-coded secret assignment",
-         _r(r"(?i)\b[A-Za-z0-9_.\-]*(?:password|passwd|secret|token|api_?key|access_?key|private_?key|auth_?key|credentials?)[A-Za-z0-9_.\-]*[\"']?[ \t]*[:=][ \t]*[\"']?([^\s\"'#,;]{8,})"),
+         _r(r"(?i)\b[A-Za-z0-9_.\-]*(?:password|passwd|secret|token|api_?key|access_?key|private_?key|auth_?key|credentials?)[A-Za-z0-9_.\-]*[\"']?[ \t]*[:=][ \t]*[\"'`]?([^\s\"'`#,;]{8,})"),
          5, 1, specific=False, check=_generic),
 ]
 

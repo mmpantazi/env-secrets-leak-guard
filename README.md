@@ -20,7 +20,18 @@ leakguard scan . --ci-log run1.log --ci-log run2.log
 leakguard scan . --visibility public --format json
 ```
 
-Needs Python 3.9+ and `git` on PATH. Exit code is 1 when a finding at or above `--fail-on` (default `high`) exists, so it works as a pre-commit/CI gate (`--no-history` for speed).
+Needs Python 3.9+ and `git` on PATH. Exit code is 1 when a finding at or above `--fail-on` (default `high`) exists, so it works as a pre-commit/CI gate (`--no-history` for speed, or `--staged` to look only at what the next commit would add).
+
+### As a pre-commit hook
+
+Plain git hook (`.git/hooks/pre-commit`, then `chmod +x`):
+
+```sh
+#!/bin/sh
+exec python -m leakguard scan --staged --fail-on high
+```
+
+or with the pre-commit framework, point `repo:` at this repository and use hook id `leakguard` (`.pre-commit-hooks.yaml`).
 
 ## What it looks at
 
@@ -32,7 +43,7 @@ Needs Python 3.9+ and `git` on PATH. Exit code is 1 when a finding at or above `
 | CI logs | saved log files with ANSI colours and timestamps stripped; credentials in `Authorization:` headers, `env` dumps, `set -x` echoes |
 | Any of them | secrets hidden in base64 (Kubernetes `Secret` YAML, unmasked derived values in logs) |
 
-About 25 rules: AWS, GitHub, GitLab, Stripe, OpenAI, Anthropic, Google, Slack, SendGrid, Twilio, npm, PyPI, DigitalOcean, private keys, JWTs, passwords in database/broker URLs, auth headers, plus a generic `NAME_PASSWORD=value` rule.
+About 30 rules: AWS, Azure storage, GitHub, GitLab, Stripe, OpenAI, Anthropic, Groq, Hugging Face, Google, Slack, SendGrid, Twilio, Mailgun, Shopify, Telegram, npm, PyPI, DigitalOcean, private keys, JWTs, passwords in database/broker URLs, auth headers, plus a generic `NAME_PASSWORD=value` rule.
 
 ## How findings are ranked
 
@@ -58,7 +69,8 @@ Findings for the same secret in several places are merged; the worst exposure wi
 
 - No live check whether a key still works. Treat every ranked finding as live until the provider says otherwise.
 - Regex rules cover the common providers, not every SaaS. The generic rule catches `*_PASSWORD=...` style assignments; unusual formats can be missed.
-- "Pushed" means reachable from a remote ref known locally (run `git fetch` first).
+- "Pushed" means reachable from a remote ref known locally (run `git fetch` first). History scanning covers `git log --all`; stashes, reflog-only and dangling commits are not read.
+- GitHub tokens are checked with the documented CRC32/base62 checksum; other formats are matched by shape only.
 - Images: pass a `docker save` tarball or a name; OCI-only layouts without `manifest.json` are not read. System paths (`/usr/lib`, `/usr/share`, ...) are skipped.
 
 ## Development

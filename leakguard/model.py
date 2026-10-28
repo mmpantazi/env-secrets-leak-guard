@@ -7,7 +7,7 @@ from typing import Optional
 from .rules import RULES, SPECIFIC, Rule, looks_placeholder
 
 ALLOW_MARK = "leakguard:allow"
-TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|spec|fixtures?|examples?|samples?|docs?|testdata|mocks?)(/|$)|\.(test|spec)\.", re.I)
+TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|spec|fixtures?|examples?|samples?|docs?|testdata|mocks?)(/|$)|[._](test|spec)\.|(^|/)test_[^/]*\.py$|_test\.(go|py|rb|js|ts)$", re.I)
 B64 = re.compile(r"(?<![A-Za-z0-9+/=])([A-Za-z0-9+/]{24,2000}={0,2})(?![A-Za-z0-9+/=])")
 
 

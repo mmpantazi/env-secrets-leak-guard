@@ -69,6 +69,31 @@ PLAYBOOKS = {
         "Delete the token: API > Tokens, and generate a replacement with the least scope.",
         "Check misuse: Droplets, Spaces keys, firewalls and the account Security/activity history for things you did not create.",
     ]),
+    "huggingface": ("https://huggingface.co/settings/tokens", [
+        "Delete the token under Settings > Access Tokens and create a fine-grained replacement.",
+        "Check misuse: private models/datasets and Spaces owned by the account for unexpected commits or visibility changes.",
+    ]),
+    "groq": ("https://console.groq.com/keys", [
+        "Delete the key in the Groq console API Keys page and create a new one.",
+        "Check misuse: usage dashboard for traffic you did not generate.",
+    ]),
+    "shopify": ("", [
+        "Uninstall or regenerate the app credentials in the Shopify admin (Settings > Apps and sales channels > Develop apps) so the old access token stops working.",
+        "Check misuse: the store's staff/app activity, new apps, exported customer data and changed payment settings.",
+    ]),
+    "mailgun": ("https://app.mailgun.com/settings/api_security", [
+        "Regenerate or delete the key under Settings > API security and update your sender configuration.",
+        "Check misuse: Logs for mail you did not send; watch domain reputation.",
+    ]),
+    "telegram": ("", [
+        "Open @BotFather, choose /revoke for the bot to issue a new token, and update the bot's deployment.",
+        "Check misuse: anyone with the token could read the bot's messages and send as the bot.",
+    ]),
+    "azure": ("https://portal.azure.com/#view/HubsExtension/BrowseResource/resourceType/Microsoft.Storage%2FStorageAccounts", [
+        "Rotate the key: Storage account > Security + networking > Access keys > Rotate key (rotate the other key first if apps use it, then the exposed one).",
+        "Prefer Entra ID / SAS tokens with an expiry over account keys.",
+        "Check misuse: storage account diagnostic logs and container access levels for downloads or public-access changes.",
+    ]),
     "private-key": ("", [
         "Generate a new key pair; never reuse the exposed one.",
         "Remove the old public key from every place it was trusted: ~/.ssh/authorized_keys on servers, GitHub/GitLab SSH and deploy keys, cloud key pairs. For TLS/signing keys, revoke the certificate and reissue.",

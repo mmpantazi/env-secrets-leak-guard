@@ -14,6 +14,7 @@ from .rules import is_env_file, is_sensitive_file
 
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".tox", ".mypy_cache", ".pytest_cache", ".next", "site-packages"}
 SKIP_EXT = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip", ".gz", ".tgz", ".woff", ".woff2", ".ttf", ".so", ".pyc", ".class", ".jar", ".mp4", ".mp3", ".lock", ".svg", ".map"}
+SKIP_NAMES = {".gitleaksignore", ".leakguardignore", ".secrets.baseline", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "Cargo.lock", "go.sum"}
 MAX_FILE = 1_000_000
 IMAGE_SKIP = ("usr/lib/", "usr/share/", "usr/include/", "lib/", "var/lib/dpkg/", "var/lib/apt/", "var/cache/", "etc/ssl/certs/", "usr/local/lib/", "proc/", "sys/", "usr/bin/", "bin/", "sbin/", "usr/sbin/")
 DOC_EXT = {".md", ".rst", ".txt", ".adoc", ".html"}
@@ -46,10 +47,8 @@ class GitInfo:
         self.has_remote = False
         if not self.ok:
             return
-        prefix = git(root, "rev-parse", "--show-prefix").strip()
-        self.tracked = {p[len(prefix):] for p in git(root, "ls-files", "-z").split("\0") if p.startswith(prefix)}
-        ign = git(root, "ls-files", "-z", "-o", "-i", "--exclude-standard", check=False).split("\0")
-        self.ignored = {p[len(prefix):] for p in ign if p.startswith(prefix)}
+        self.tracked = set(git(root, "ls-files", "-z").split("\0"))
+        self.ignored = set(git(root, "ls-files", "-z", "-o", "-i", "--exclude-standard", check=False).split("\0"))
         self.has_remote = bool(git(root, "remote", check=False).strip())
         self.pushed = set(git(root, "rev-list", "--remotes", check=False).split())
         head = git(root, "rev-parse", "HEAD", check=False).strip()
@@ -63,7 +62,7 @@ def scan_tree(root: Path, info: GitInfo, ignored_fps, exclude=frozenset()):
         for name in files:
             full = Path(dirpath) / name
             rel = full.relative_to(root).as_posix()
-            if full.suffix.lower() in SKIP_EXT or full.is_symlink() or full.resolve() in exclude:
+            if full.suffix.lower() in SKIP_EXT or name in SKIP_NAMES or full.is_symlink() or full.resolve() in exclude:
                 continue
             if not info.ok:
                 channel = "file"
@@ -90,40 +89,39 @@ def scan_tree(root: Path, info: GitInfo, ignored_fps, exclude=frozenset()):
     return findings
 
 
-def scan_history(root: Path, info: GitInfo, ignored_fps):
-    findings = []
-    if not info.ok:
-        return findings
-    out = git(root, "log", "--all", "-p", "-U0", "--no-color", "--no-ext-diff", "--format=%x00%H%x01%aI%x01%an", check=False)
-    cur = None
+def _added_blobs(diff_output: str):
+    """Yield (commit_header, path, added_text) from `git log -p` or `git diff` output."""
+    cur = ("", "", "")
     path = None
     buf: list = []
-
-    def flush():
-        if cur and path and buf:
-            text = "\n".join(buf)
-            if len(text) <= 2 * MAX_FILE and not Path(path).suffix.lower() in SKIP_EXT:
-                channel = "pushed" if cur[0] in info.pushed else "history-local"
-                findings.extend(scan_text(text, lambda ln, c=channel, p=path, k=cur: Location(
-                    c, p, None, "history", k[0], k[1], k[2]), rules_for(path), ignored=ignored_fps))
-
-    for line in out.split("\n"):
-        if line.startswith("\0"):
-            flush()
-            buf = []
-            path = None
-            h, d, a = line[1:].split("\x01", 2)
-            cur = (h, d, a)
-        elif line.startswith("diff --git "):
-            flush()
-            buf = []
-            path = None
+    for line in diff_output.split("\n") + ["diff --git end"]:
+        if line.startswith("\0") or line.startswith("diff --git "):
+            if path and buf:
+                yield cur, path, "\n".join(buf)
+            buf, path = [], None
+            if line.startswith("\0"):
+                cur = tuple(line[1:].split("\x01", 2))
         elif line.startswith("+++ "):
             p = line[4:].split("\t")[0]
             path = p[2:] if p.startswith("b/") else None
         elif line.startswith("+") and path:
             buf.append(line[1:])
-    flush()
+
+
+def _scannable(path: str, text: str) -> bool:
+    return Path(path).name not in SKIP_NAMES and len(text) <= 2 * MAX_FILE and Path(path).suffix.lower() not in SKIP_EXT
+
+
+def scan_history(root: Path, info: GitInfo, ignored_fps):
+    findings = []
+    if not info.ok:
+        return findings
+    out = git(root, "log", "--all", "-p", "-U0", "--no-color", "--no-ext-diff", "--format=%x00%H%x01%aI%x01%an", check=False)
+    for cur, path, text in _added_blobs(out):
+        if _scannable(path, text):
+            channel = "pushed" if cur[0] in info.pushed else "history-local"
+            findings += scan_text(text, lambda ln, c=channel, p=path, k=cur: Location(
+                c, p, None, "history", k[0], k[1], k[2]), rules_for(path), ignored=ignored_fps)
     added = git(root, "log", "--all", "--diff-filter=A", "--name-only", "--format=%x00%H%x01%aI%x01%an", check=False)
     k = None
     for line in added.split("\n"):
@@ -134,6 +132,21 @@ def scan_history(root: Path, info: GitInfo, ignored_fps):
             channel = "pushed" if k[0] in info.pushed else "history-local"
             kind = "env file" if is_env_file(line) else "sensitive file"
             findings.append(env_file_finding(line, Location(channel, line, None, "committed", k[0], k[1], k[2])))
+    return findings
+
+
+def scan_staged(root: Path, info: GitInfo, ignored_fps):
+    """Added lines of the index (what the next commit would contain)."""
+    if not info.ok:
+        raise RuntimeError(f"{root} is not a git repository, --staged needs one")
+    out = git(root, "diff", "--cached", "-U0", "--no-color", "--no-ext-diff", check=False)
+    findings = []
+    for _, path, text in _added_blobs(out):
+        if _scannable(path, text):
+            findings += scan_text(text, lambda ln, p=path: Location("staged", p, None, "staged for commit"),
+                                  rules_for(path), ignored=ignored_fps)
+        if is_env_file(path) or is_sensitive_file(path):
+            findings.append(env_file_finding(path, Location("staged", path, None, "staged for commit")))
     return findings
 
 
