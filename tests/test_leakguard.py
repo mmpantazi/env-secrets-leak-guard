@@ -307,6 +307,11 @@ class Sources(unittest.TestCase):
         self.assertTrue(s.locations[0].deleted_later)
         self.assertIn("deleted in a later layer", to_text([s], "x"))
 
+    def test_gzip_layers(self):
+        img = self.dir / "gz.tar"
+        make_image(img, [{"srv/config.ini": f"password = Zk39xQpL02mVb7Ya\nkey={AWS}\n"}], gz=True)
+        self.assertEqual({f.rule.id for f in scan_image(str(img), frozenset())}, {"generic-secret", "aws-access-key-id"})
+
     def test_missing_image_is_error(self):
         with self.assertRaises(RuntimeError):
             scan_image("no-such-image-xyz:1", frozenset())
@@ -337,6 +342,18 @@ class Cli(unittest.TestCase):
             git(d, "add", "a.py")
             self.assertEqual(run(build_parser().parse_args(["scan", str(d), "--staged"])), 1)
             self.assertEqual(run(build_parser().parse_args(["scan", str(d / "..") , "--staged"])), 2)
+
+    def test_min_tier_hides_low(self):
+        import contextlib
+        import io
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "a.py").write_text(f"K='{AWS}'\n")
+            (Path(d) / "b.cfg").write_text("password = weakword\n")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                run(build_parser().parse_args(["scan", d, "--min-tier", "high", "--fail-on", "never"]))
+            self.assertIn("1 lower-tier finding hidden by --min-tier", out.getvalue())
+            self.assertNotIn("b.cfg", out.getvalue())
 
     def test_never_and_bad_path(self):
         self.assertEqual(run(build_parser().parse_args(["scan", "/nonexistent-dir-xyz"])), 2)

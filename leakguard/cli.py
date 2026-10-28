@@ -33,6 +33,7 @@ def build_parser():
     s.add_argument("--ci-log", action="append", default=[], metavar="FILE", help="saved CI log file (repeatable)")
     s.add_argument("--visibility", choices=["public", "private", "unknown"], default="unknown", help="is the repo/image/logs public? offline cannot tell (default: unknown)")
     s.add_argument("--format", choices=["text", "json"], default="text")
+    s.add_argument("--min-tier", choices=["low", "medium", "high", "critical"], default="low", help="hide findings below this tier in the output (default: show all)")
     s.add_argument("--rotation", metavar="FILE", help="write the rotation plan (markdown) to FILE")
     s.add_argument("--ignore-file", metavar="FILE", help="extra file of fingerprints to ignore (default also reads <path>/.leakguardignore)")
     s.add_argument("--fail-on", choices=["low", "medium", "high", "critical", "never"], default="high", help="exit 1 if a finding at or above this tier exists (default: high)")
@@ -67,8 +68,10 @@ def run(args) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
     findings = rank(merge(findings), args.visibility)
+    hidden = [f for f in findings if ORDER[f.tier] < ORDER[args.min_tier.upper()]]
+    shown = [f for f in findings if f not in hidden]
     stats = "scanned " + ", ".join(parts) + f"; visibility {args.visibility}"
-    print(to_json(findings, stats) if args.format == "json" else to_text(findings, stats), end="")
+    print(to_json(shown, stats) if args.format == "json" else to_text(shown, stats, len(hidden)), end="")
     if args.rotation:
         Path(args.rotation).write_text(to_rotation(findings, stats))
     if args.fail_on == "never":

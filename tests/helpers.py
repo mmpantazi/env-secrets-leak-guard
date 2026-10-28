@@ -27,10 +27,10 @@ def tar_bytes(files, gz=False):
     return buf.getvalue()
 
 
-def make_image(path, layers, env=(), history=()):
+def make_image(path, layers, env=(), history=(), gz=False):
     names = [f"layer{i}/layer.tar" for i in range(len(layers))]
     config = {"config": {"Env": list(env)}, "history": [{"created_by": h} for h in history]}
     files = {"manifest.json": json.dumps([{"Config": "cfg.json", "Layers": names}]), "cfg.json": json.dumps(config)}
     for n, l in zip(names, layers):
-        files[n] = tar_bytes(l)
+        files[n] = tar_bytes(l, gz)
     path.write_bytes(tar_bytes(files))

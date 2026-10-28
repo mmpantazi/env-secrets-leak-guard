@@ -18,6 +18,7 @@ leakguard scan . --image app.tar                   # a `docker save app:latest -
 leakguard scan . --image myapp:latest              # or an image name (needs the docker CLI)
 leakguard scan . --ci-log run1.log --ci-log run2.log
 leakguard scan . --visibility public --format json
+leakguard scan . --min-tier high                    # hide medium/low findings in the output
 ```
 
 Needs Python 3.9+ and `git` on PATH. Exit code is 1 when a finding at or above `--fail-on` (default `high`) exists, so it works as a pre-commit/CI gate (`--no-history` for speed, or `--staged` to look only at what the next commit would add).
@@ -72,6 +73,10 @@ Findings for the same secret in several places are merged; the worst exposure wi
 - "Pushed" means reachable from a remote ref known locally (run `git fetch` first). History scanning covers `git log --all`; stashes, reflog-only and dangling commits are not read.
 - GitHub tokens are checked with the documented CRC32/base62 checksum; other formats are matched by shape only.
 - Images: pass a `docker save` tarball or a name; OCI-only layouts without `manifest.json` are not read. System paths (`/usr/lib`, `/usr/share`, ...) are skipped.
+
+## Accuracy
+
+`tests/test_corpus.py` holds 21 seeded secrets (env files, YAML, JSON, Terraform, Dockerfile, curl, git URLs, PEM-in-JSON, ...) and 25 look-alike traps (placeholders, env lookups, UUIDs, hashes, test keys, UI text); all seeds are found and no trap is reported. This is a small author-written set, not an independent benchmark. On real repos (flask, express) it reports nothing but a test `.env`.
 
 ## Development
 

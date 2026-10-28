@@ -1,5 +1,4 @@
 """Where to look: working tree, git history, docker image tarballs, CI logs."""
-import io
 import json
 import os
 import re
@@ -189,8 +188,7 @@ def scan_image(target: str, ignored_fps):
         for idx, name in enumerate(layers):
             wo = set()
             files = []
-            data = outer.extractfile(name).read()
-            with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as layer:
+            with tarfile.open(fileobj=outer.extractfile(name), mode="r|*") as layer:
                 for m in layer:
                     base = os.path.basename(m.name)
                     if base.startswith(".wh."):

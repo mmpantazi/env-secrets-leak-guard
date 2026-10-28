@@ -123,6 +123,8 @@ def _generic(secret: str, line: str):
     if DOTTED_IDENT.match(secret):
         return 0.0, "looks like a code reference"
     has_digit = any(c.isdigit() for c in secret)
+    if " " in secret and not (has_digit and not secret.endswith(("?", ".", "!", ":"))):
+        return 0.0, "sentence, not a secret"
     has_symbol = any(c in "!@#$%^&*+~|?" for c in secret)
     if not (has_digit or has_symbol) and len(secret) < 20 and not BARE_ASSIGN.match(line.strip()):
         return 0.0, "plain word in code or prose"
@@ -176,8 +178,8 @@ RULES = [
     Rule("basic-auth-url", "basic-auth", "Password in URL",
          _r(r"\bhttps?://[^\s:/@'\"]+:([^\s@'\"/]{4,})@[A-Za-z0-9.\-]+"), 6, 1, specific=False, check=_generic),
     Rule("generic-secret", "generic", "Hard-coded secret assignment",
-         _r(r"(?i)\b[A-Za-z0-9_.\-]*(?:password|passwd|secret|token|api_?key|access_?key|private_?key|auth_?key|credentials?)[A-Za-z0-9_.\-]*[\"']?[ \t]*[:=][ \t]*[\"'`]?([^\s\"'`#,;]{8,})"),
-         5, 1, specific=False, check=_generic),
+         _r(r"(?i)\b[A-Za-z0-9_.\-]*(?:password|passwd|secret|token|api_?key|access_?key|private_?key|auth_?key|credentials?)[A-Za-z0-9_.\-]*[\"']?[ \t]*[:=][ \t]*(?:\"([^\"\n]{8,})\"|'([^'\n]{8,})'|`([^`\n]{8,})`|([^\s\"'`#,;]{8,}))"),
+         5, -1, specific=False, check=_generic),
 ]
 
 SPECIFIC = [r for r in RULES if r.specific]

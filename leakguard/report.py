@@ -53,7 +53,7 @@ def summary(findings):
     return ", ".join(f"{c[t]} {t.lower()}" for t in ("CRITICAL", "HIGH", "MEDIUM", "LOW") if c[t]) or "no findings"
 
 
-def to_text(findings, stats) -> str:
+def to_text(findings, stats, hidden=0) -> str:
     out = [f"leakguard: {stats}", f"Result: {summary(findings)}", ""]
     if findings and findings[0].tier in ("CRITICAL", "HIGH"):
         out += [f"Fix first: #1, {findings[0].rule.label}. Rotate it before cleaning git history.", ""]
@@ -69,6 +69,8 @@ def to_text(findings, stats) -> str:
         if fs:
             out.append(f"   first committed: {fs[:10]}")
         out.append("")
+    if hidden:
+        out.append(f"{hidden} lower-tier finding{'s' if hidden > 1 else ''} hidden by --min-tier.")
     if findings:
         out.append("Rotation steps: re-run with --rotation ROTATION.md. Secrets are never printed in full.")
     return "\n".join(out).rstrip() + "\n"

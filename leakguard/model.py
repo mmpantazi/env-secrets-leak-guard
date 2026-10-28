@@ -64,7 +64,7 @@ def scan_text(text: str, make_location, rules=RULES, decode=True, ignored=frozen
     taken = set()
     for rule in rules:
         for m in rule.pattern.finditer(text):
-            secret = m.group(rule.group).strip()
+            secret = (next(g for g in m.groups() if g) if rule.group < 0 else m.group(rule.group)).strip()
             line = _line_text(text, m.start())
             if ALLOW_MARK in line:
                 continue
