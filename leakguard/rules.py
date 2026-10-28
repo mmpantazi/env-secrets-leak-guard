@@ -107,13 +107,22 @@ def _dburl(secret: str, line: str):
     return 1.0, f"remote host {host}"
 
 
-def _generic(secret: str, _line: str):
+BARE_ASSIGN = re.compile(r"^(export\s+)?[A-Za-z0-9_\-]+\s*[=:]\s*[^\s\"'();]+$")
+
+
+def _generic(secret: str, line: str):
     if looks_placeholder(secret):
         return 0.0, "placeholder"
     if secret.startswith(("/", "./", "http://", "https://")) and "@" not in secret:
         return 0.0, "path or URL"
     if "(" in secret or "[" in secret:
         return 0.0, "looks like code"
+    has_digit = any(c.isdigit() for c in secret)
+    has_symbol = any(c in "!@#$%^&*+~|?" for c in secret)
+    if not (has_digit or has_symbol) and len(secret) < 20 and not BARE_ASSIGN.match(line.strip()):
+        return 0.0, "plain word in code or prose"
+    if not (has_digit or has_symbol) and len(secret) < 20:
+        return 0.5, "plain word, probably a weak or dev password"
     h = entropy(secret)
     if h < 2.5 and len(secret) < 14:
         return 0.35, "low-entropy value, probably a weak or dev password"

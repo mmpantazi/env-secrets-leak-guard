@@ -55,6 +55,17 @@ class Detection(unittest.TestCase):
                   'password = os.environ["PASSWORD"]', "PASSWORD=********", "api_key = get_key()", "TOKEN=process.env.TOKEN"]:
             self.assertEqual(scan(t), [], t)
 
+    def test_code_and_prose_not_reported(self):
+        for t in ["var secret = this.req.secret;", "SECRET_KEY = 'development key'", 'app.secret_key = "secret_key"',
+                  "secret: 'keyboard cat'", "connect(password=secret)", 'msg = "Revoke the token: npmjs.com > profile"',
+                  "Webhook secrets: Developers > Webhooks"]:
+            self.assertEqual(scan(t), [], t)
+
+    def test_bare_env_word_password_is_kept_but_weak(self):
+        f = scan("DB_PASSWORD=postgres")
+        self.assertEqual(len(f), 1)
+        self.assertEqual(f[0].validity, 0.5)
+
     def test_generic_env_secret(self):
         f = scan("STRIPE_WEBHOOK_TOKEN=Zk39xQpL02mVb7Ya")
         self.assertEqual(f[0].rule.id, "generic-secret")

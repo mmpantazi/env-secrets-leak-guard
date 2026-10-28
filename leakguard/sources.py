@@ -133,7 +133,7 @@ def scan_history(root: Path, info: GitInfo, ignored_fps):
         elif line and k and (is_env_file(line) or is_sensitive_file(line)):
             channel = "pushed" if k[0] in info.pushed else "history-local"
             kind = "env file" if is_env_file(line) else "sensitive file"
-            findings.append(env_file_finding(line, Location(channel, line, None, kind + " committed", k[0], k[1], k[2])))
+            findings.append(env_file_finding(line, Location(channel, line, None, "committed", k[0], k[1], k[2])))
     return findings
 
 

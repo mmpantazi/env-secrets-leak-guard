@@ -109,7 +109,7 @@ SCRUB = {
         "Forks, clones, CI caches and PR refs keep the old data, so the rewrite is hygiene, not a fix. Rotation is the fix.",
     ],
     "history-local": [
-        "These commits are not on any remote yet, so you can still rewrite them before pushing: `git commit --amend` or `git rebase -i`, or `git filter-repo`. If the secret was never pushed, rotating is optional.",
+        "These commits are not on any remote yet, so you can still rewrite them before pushing: `git commit --amend` or `git rebase -i`, or `git filter-repo`. If the repo and these commits never left this machine (no backups, no other clones), rotating is optional.",
     ],
     "image": [
         "Rebuild the image without the secret: use BuildKit `RUN --mount=type=secret,id=...` for build-time credentials, pass runtime values with `docker run --env-file` or your orchestrator's secrets, and add the file to .dockerignore. Deleting a file in a later layer does not remove it from earlier layers.",

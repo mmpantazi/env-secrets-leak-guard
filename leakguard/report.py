@@ -16,23 +16,27 @@ CHANNEL_TEXT = {
 MAX_LOCS = 4
 
 
-def _loc(l) -> str:
-    s = f"{l.path}:{l.line}" if l.line else l.path
-    extra = []
-    if l.commit:
-        extra.append(f"commit {l.commit[:7]} {l.date[:10]} by {l.author}")
-    if l.detail and l.detail != "history":
-        extra.append(l.detail)
-    if l.deleted_later:
-        extra.append("deleted in a later layer but still recoverable")
-    return s + (f" ({'; '.join(extra)})" if extra else "")
-
-
 def _locs(f):
-    shown = [_loc(l) for l in f.locations[:MAX_LOCS]]
-    if len(f.locations) > MAX_LOCS:
-        shown.append(f"... and {len(f.locations) - MAX_LOCS} more")
-    return shown
+    groups: dict = {}
+    for l in f.locations:
+        g = groups.setdefault(l.path, {"line": None, "commits": [], "notes": []})
+        g["line"] = g["line"] or l.line
+        if l.commit:
+            g["commits"].append((l.date, l.commit[:7], l.author))
+        for n in (l.detail if l.detail != "history" else "", "deleted in a later layer but still recoverable" if l.deleted_later else ""):
+            if n and n not in g["notes"]:
+                g["notes"].append(n)
+    out = []
+    for path, g in groups.items():
+        s = f"{path}:{g['line']}" if g["line"] else path
+        if g["commits"]:
+            d, sha, who = min(g["commits"])
+            n = len(g["commits"])
+            g["notes"].append(f"in {n} commit{'s' if n > 1 else ''}, first {sha} on {d[:10]} by {who}")
+        out.append(s + (f" ({'; '.join(g['notes'])})" if g["notes"] else ""))
+    if len(out) > MAX_LOCS:
+        out = out[:MAX_LOCS] + [f"... and {len(out) - MAX_LOCS} more files"]
+    return out
 
 
 def _where(f):
